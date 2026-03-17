@@ -193,11 +193,10 @@ export default function Page() {
               <StatCard
                 label="ProveX Market Cap"
                 value={formatCompactUsd(data.adjustedMarketCapUsd)}
-                subvalue={`${formatFullTokenAmount(data.adjustedCirculatingSupply)} PRVX adjusted supply`}
               />
 
               <StatCard
-                label="Adjusted Circulating Supply"
+                label="Adj Circulating Supply"
                 value={`${formatCompactTokenAmount(data.adjustedCirculatingSupply)} PRVX`}
                 subvalue={formatFullTokenAmount(data.adjustedCirculatingSupply)}
               />
