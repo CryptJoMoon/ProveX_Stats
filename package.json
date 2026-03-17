@@ -1,21 +1,15 @@
 {
-  "name": "prvx-adjusted-marketcap-dashboard",
-  "version": "1.0.0",
+  "name": "prvx-dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "dev": "next dev"
   },
   "dependencies": {
+    "ethers": "^6.11.1",
     "next": "15.5.9",
-    "react": "19.1.0",
-    "react-dom": "19.1.0"
-  },
-  "devDependencies": {
-    "typescript": "5.9.2",
-    "@types/node": "24.3.0",
-    "@types/react": "19.1.12",
-    "@types/react-dom": "19.1.9"
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }
