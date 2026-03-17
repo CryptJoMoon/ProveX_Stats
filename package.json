@@ -2,14 +2,20 @@
   "name": "prvx-dashboard",
   "private": true,
   "scripts": {
+    "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "dev": "next dev"
+    "start": "next start"
   },
   "dependencies": {
     "ethers": "^6.11.1",
     "next": "15.5.9",
     "react": "18.3.1",
     "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "@types/react": "^18.3.24",
+    "@types/react-dom": "^18.3.7",
+    "@types/node": "^22.15.30"
   }
 }
