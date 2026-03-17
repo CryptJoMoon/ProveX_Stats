@@ -25,41 +25,33 @@ function safeToNumber(value: string) {
 }
 
 async function getPriceUsd(): Promise<number> {
-  const url = `https://api.dexscreener.com/latest/dex/tokens/${TOKEN_ADDRESS}`;
-  const res = await fetch(url, { cache: "no-store" });
+  try {
+    const url = `https://api.dexscreener.com/latest/dex/tokens/${TOKEN_ADDRESS}`;
+    const res = await fetch(url, { cache: "no-store" });
 
-  if (!res.ok) {
-    throw new Error(`DexScreener price request failed: ${res.status}`);
+    if (!res.ok) return 0;
+
+    const json = await res.json();
+    const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
+    if (!pairs.length) return 0;
+
+    const sorted = pairs
+      .filter((p: any) => p?.priceUsd)
+      .sort((a: any, b: any) => {
+        const aPulse = String(a?.chainId || "").toLowerCase() === "pulsechain" ? 1 : 0;
+        const bPulse = String(b?.chainId || "").toLowerCase() === "pulsechain" ? 1 : 0;
+        if (aPulse !== bPulse) return bPulse - aPulse;
+
+        const aLiq = Number(a?.liquidity?.usd || 0);
+        const bLiq = Number(b?.liquidity?.usd || 0);
+        return bLiq - aLiq;
+      });
+
+    const price = Number(sorted?.[0]?.priceUsd || 0);
+    return Number.isFinite(price) ? price : 0;
+  } catch {
+    return 0;
   }
-
-  const json = await res.json();
-  const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
-
-  if (!pairs.length) {
-    throw new Error("No DexScreener pairs found for PRVX.");
-  }
-
-  // Prefer PulseChain pair with highest liquidityUsd, otherwise best available pair
-  const sorted = pairs
-    .filter((p: any) => p?.priceUsd)
-    .sort((a: any, b: any) => {
-      const aPulse = (a.chainId || "").toLowerCase() === "pulsechain" ? 1 : 0;
-      const bPulse = (b.chainId || "").toLowerCase() === "pulsechain" ? 1 : 0;
-      if (aPulse !== bPulse) return bPulse - aPulse;
-
-      const aLiq = Number(a?.liquidity?.usd || 0);
-      const bLiq = Number(b?.liquidity?.usd || 0);
-      return bLiq - aLiq;
-    });
-
-  const best = sorted[0];
-  const price = Number(best?.priceUsd || 0);
-
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new Error("Invalid PRVX price from DexScreener.");
-  }
-
-  return price;
 }
 
 export async function GET() {
@@ -67,36 +59,45 @@ export async function GET() {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
     const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, provider);
 
-    const [decimals, rawTotalSupply, symbol, name, priceUsd] = await Promise.all([
-      token.decimals(),
-      token.totalSupply(),
+    const decimals: number = Number(await token.decimals());
+    const rawTotalSupply = await token.totalSupply();
+
+    const [symbol, name, priceUsdRaw] = await Promise.all([
       token.symbol().catch(() => "PRVX"),
       token.name().catch(() => "ProveX"),
       getPriceUsd(),
     ]);
 
-    const balanceResults = await Promise.all(
+    const totalSupply = safeToNumber(ethers.formatUnits(rawTotalSupply, decimals));
+
+    const excludedWallets = await Promise.all(
       EXCLUDED_WALLETS.map(async (address) => {
-        const rawBalance = await token.balanceOf(address);
-        const balanceFormatted = ethers.formatUnits(rawBalance, decimals);
-        return {
-          address,
-          balance: safeToNumber(balanceFormatted),
-          rawBalance: rawBalance.toString(),
-        };
+        try {
+          const rawBalance = await token.balanceOf(address);
+          const balance = safeToNumber(ethers.formatUnits(rawBalance, decimals));
+          return {
+            address,
+            balance,
+            rawBalance: rawBalance.toString(),
+          };
+        } catch {
+          return {
+            address,
+            balance: 0,
+            rawBalance: "0",
+          };
+        }
       })
     );
 
-    const totalSupplyFormatted = ethers.formatUnits(rawTotalSupply, decimals);
-    const totalSupply = safeToNumber(totalSupplyFormatted);
-
-    const excludedDeadTotal = balanceResults.reduce((sum, w) => sum + w.balance, 0);
+    const excludedDeadTotal = excludedWallets.reduce((sum, w) => sum + w.balance, 0);
 
     const adjustedCirculatingSupply = Math.max(
       0,
       totalSupply - excludedDeadTotal - OA_EXCLUDED_SUPPLY
     );
 
+    const priceUsd = Number.isFinite(priceUsdRaw) ? priceUsdRaw : 0;
     const fdvUsd = totalSupply * priceUsd;
     const adjustedMarketCapUsd = adjustedCirculatingSupply * priceUsd;
 
@@ -108,11 +109,7 @@ export async function GET() {
       totalSupply,
       rawTotalSupply: rawTotalSupply.toString(),
       priceUsd,
-      excludedWallets: balanceResults.map(({ address, balance, rawBalance }) => ({
-        address,
-        balance,
-        rawBalance,
-      })),
+      excludedWallets,
       excludedDeadTotal,
       oaExcludedSupply: OA_EXCLUDED_SUPPLY,
       adjustedCirculatingSupply,
@@ -124,6 +121,20 @@ export async function GET() {
     return NextResponse.json(
       {
         error: error?.message || "Failed to load PRVX data.",
+        tokenAddress: TOKEN_ADDRESS,
+        totalSupply: 0,
+        priceUsd: 0,
+        excludedWallets: EXCLUDED_WALLETS.map((address) => ({
+          address,
+          balance: 0,
+          rawBalance: "0",
+        })),
+        excludedDeadTotal: 0,
+        oaExcludedSupply: OA_EXCLUDED_SUPPLY,
+        adjustedCirculatingSupply: 0,
+        fdvUsd: 0,
+        adjustedMarketCapUsd: 0,
+        updatedAt: new Date().toISOString(),
       },
       { status: 500 }
     );
