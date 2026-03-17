@@ -2,19 +2,23 @@
 
 import { useEffect, useState } from "react";
 
-type PrvxData = {
+type WalletStat = {
+  address: string;
+  balance: number;
+};
+
+type ApiResponse = {
   tokenAddress: string;
-  symbol: string;
-  name: string;
-  priceUsd: number;
   totalSupply: number;
-  excludedWalletsTotal: number;
+  priceUsd: number;
+  excludedWallets: WalletStat[];
+  excludedDeadTotal: number;
   oaExcludedSupply: number;
   adjustedCirculatingSupply: number;
-  fdv: number;
-  adjustedMarketCap: number;
+  fdvUsd: number;
+  adjustedMarketCapUsd: number;
   updatedAt: string;
-  excludedWallets: string[];
+  error?: string;
 };
 
 function formatCompactUsd(value: number) {
@@ -111,7 +115,7 @@ function StatCard({
 }
 
 export default function Page() {
-  const [data, setData] = useState<PrvxData | null>(null);
+  const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -127,11 +131,12 @@ export default function Page() {
       setError("");
 
       const res = await fetch("/api/prvx", { cache: "no-store" });
+      const json = await res.json();
+
       if (!res.ok) {
-        throw new Error(`Request failed: ${res.status}`);
+        throw new Error(json?.error || `Request failed: ${res.status}`);
       }
 
-      const json = await res.json();
       setData(json);
     } catch (err) {
       console.error(err);
@@ -169,8 +174,7 @@ export default function Page() {
 
         <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-zinc-800/80 bg-black/30 p-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-zinc-300">
-            <span className="font-medium text-white">Token:</span>{" "}
-            {data?.name || "ProveX"} ({data?.symbol || "PRVX"})
+            <span className="font-medium text-white">Token:</span> ProveX (PRVX)
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -204,7 +208,7 @@ export default function Page() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <StatCard
                 label="ProveX Market Cap"
-                value={formatCompactUsd(data.adjustedMarketCap)}
+                value={formatCompactUsd(data.adjustedMarketCapUsd)}
                 subvalue={`${formatFullTokenAmount(data.adjustedCirculatingSupply)} PRVX adjusted supply`}
               />
 
@@ -216,7 +220,7 @@ export default function Page() {
 
               <StatCard
                 label="FDV"
-                value={formatCompactUsd(data.fdv)}
+                value={formatCompactUsd(data.fdvUsd)}
                 subvalue={`${formatFullTokenAmount(data.totalSupply)} PRVX total supply`}
               />
 
@@ -248,7 +252,7 @@ export default function Page() {
                       Dead / Excluded Wallets Total
                     </div>
                     <div className="mt-2 text-lg font-semibold text-white">
-                      {formatFullTokenAmount(data.excludedWalletsTotal)} PRVX
+                      {formatFullTokenAmount(data.excludedDeadTotal)} PRVX
                     </div>
                   </div>
 
@@ -280,10 +284,13 @@ export default function Page() {
                 <div className="space-y-3">
                   {data.excludedWallets.map((wallet) => (
                     <div
-                      key={wallet}
+                      key={wallet.address}
                       className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300"
                     >
-                      <div className="truncate font-mono">{wallet}</div>
+                      <div className="truncate font-mono">{wallet.address}</div>
+                      <div className="mt-1 text-zinc-400">
+                        {formatFullTokenAmount(wallet.balance)} PRVX
+                      </div>
                     </div>
                   ))}
                 </div>
