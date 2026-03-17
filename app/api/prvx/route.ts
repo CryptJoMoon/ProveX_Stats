@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 
-const RPC_URL = "https://rpc.pulsechain.com";
+const RPC_URLS = [
+  "https://pulsechain-rpc.publicnode.com",
+  "https://rpc.pulsechain.com",
+];
+
 const TOKEN_ADDRESS = "0xF6f8Db0aBa00007681F8fAF16A0FDa1c9B030b11";
 const OA_EXCLUDED_SUPPLY = 320_000_000_000;
 
@@ -24,11 +28,48 @@ function safeToNumber(value: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
+    promise
+      .then((value) => {
+        clearTimeout(id);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(id);
+        reject(err);
+      });
+  });
+}
+
+async function getWorkingTokenContract() {
+  let lastError: unknown;
+
+  for (const rpcUrl of RPC_URLS) {
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl, 369, {
+        staticNetwork: true,
+      });
+
+      const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, provider);
+
+      // quick health check
+      await withTimeout(token.decimals(), 5000);
+
+      return { provider, token, rpcUrl };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error("No working RPC endpoint found.");
+}
+
 async function getPriceUsd(): Promise<number> {
   try {
     const url = `https://api.dexscreener.com/latest/dex/tokens/${TOKEN_ADDRESS}`;
     const res = await fetch(url, { cache: "no-store" });
-
     if (!res.ok) return 0;
 
     const json = await res.json();
@@ -56,15 +97,14 @@ async function getPriceUsd(): Promise<number> {
 
 export async function GET() {
   try {
-    const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, provider);
+    const { token, rpcUrl } = await getWorkingTokenContract();
 
-    const decimals: number = Number(await token.decimals());
-    const rawTotalSupply = await token.totalSupply();
+    const decimals = Number(await withTimeout(token.decimals(), 5000));
+    const rawTotalSupply = await withTimeout(token.totalSupply(), 8000);
 
     const [symbol, name, priceUsdRaw] = await Promise.all([
-      token.symbol().catch(() => "PRVX"),
-      token.name().catch(() => "ProveX"),
+      withTimeout(token.symbol(), 5000).catch(() => "PRVX"),
+      withTimeout(token.name(), 5000).catch(() => "ProveX"),
       getPriceUsd(),
     ]);
 
@@ -73,7 +113,7 @@ export async function GET() {
     const excludedWallets = await Promise.all(
       EXCLUDED_WALLETS.map(async (address) => {
         try {
-          const rawBalance = await token.balanceOf(address);
+          const rawBalance = await withTimeout(token.balanceOf(address), 6000);
           const balance = safeToNumber(ethers.formatUnits(rawBalance, decimals));
           return {
             address,
@@ -105,7 +145,7 @@ export async function GET() {
       tokenAddress: TOKEN_ADDRESS,
       symbol,
       name,
-      decimals,
+      rpcUrlUsed: rpcUrl,
       totalSupply,
       rawTotalSupply: rawTotalSupply.toString(),
       priceUsd,
