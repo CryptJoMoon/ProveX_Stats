@@ -1,209 +1,304 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { CONFIG, type PrvxMetrics } from "@/lib/prvx";
+import { useEffect, useState } from "react";
 
-type ApiState = {
-  loading: boolean;
-  error: string | null;
-  data: PrvxMetrics | null;
+type PrvxData = {
+  tokenAddress: string;
+  symbol: string;
+  name: string;
+  priceUsd: number;
+  totalSupply: number;
+  excludedWalletsTotal: number;
+  oaExcludedSupply: number;
+  adjustedCirculatingSupply: number;
+  fdv: number;
+  adjustedMarketCap: number;
+  updatedAt: string;
+  excludedWallets: string[];
 };
 
-function formatNumber(value: number, maximumFractionDigits = 2) {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits,
-    minimumFractionDigits: 0
-  }).format(value);
-}
-
-function formatUsd(value: number) {
+function formatCompactUsd(value: number) {
+  if (!Number.isFinite(value)) return "$0";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 2
+    notation: "compact",
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
-function MetricCard({ label, value, subtext }: { label: string; value: string; subtext?: string }) {
+function formatUsdPrice(value: number) {
+  if (!Number.isFinite(value)) return "$0.00";
+
+  if (value >= 1) {
+    return value.toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  if (value >= 0.01) {
+    return value.toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4,
+    });
+  }
+
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 8,
+    maximumFractionDigits: 8,
+  });
+}
+
+function formatCompactTokenAmount(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatFullTokenAmount(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 3,
+  }).format(value);
+}
+
+function formatUpdatedAt(value: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return date.toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  });
+}
+
+function StatCard({
+  label,
+  value,
+  subvalue,
+}: {
+  label: string;
+  value: string;
+  subvalue?: string;
+}) {
   return (
-    <div className="card metric-card">
-      <div className="metric-label">{label}</div>
-      <div className="metric-value">{value}</div>
-      {subtext ? <div className="metric-subtext">{subtext}</div> : null}
+    <div className="rounded-2xl border border-cyan-500/20 bg-zinc-950/80 p-5 shadow-[0_0_30px_rgba(34,211,238,0.08)] backdrop-blur">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
+        {label}
+      </div>
+
+      <div className="overflow-hidden text-ellipsis whitespace-nowrap leading-none tracking-tight tabular-nums text-[clamp(1.1rem,2.4vw,2.2rem)] font-bold text-white">
+        {value}
+      </div>
+
+      {subvalue ? (
+        <div className="mt-3 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-zinc-400">
+          {subvalue}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-export default function HomePage() {
-  const [state, setState] = useState<ApiState>({ loading: true, error: null, data: null });
+export default function Page() {
+  const [data, setData] = useState<PrvxData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  async function loadData(isRefresh = false) {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      setError("");
+
+      const res = await fetch("/api/prvx", { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error(`Request failed: ${res.status}`);
+      }
+
+      const json = await res.json();
+      setData(json);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to load PRVX stats.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const res = await fetch("/api/prvx", { cache: "no-store" });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error || "Failed to load data.");
-        if (!cancelled) setState({ loading: false, error: null, data: json });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to load data.";
-        if (!cancelled) setState({ loading: false, error: message, data: null });
-      }
-    };
-
-    load();
-    const timer = setInterval(load, CONFIG.refreshSeconds * 1000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    loadData();
+    const interval = setInterval(() => loadData(true), 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  const updatedLabel = useMemo(() => {
-    if (!state.data?.updatedAt) return "Waiting for data...";
-    return new Date(state.data.updatedAt).toLocaleString();
-  }, [state.data?.updatedAt]);
-
-  const data = state.data;
-
   return (
-    <main className="page-shell">
-      <section className="hero card">
-        <div>
-          <div className="eyebrow">PulseChain Dashboard</div>
-          <h1>{CONFIG.siteName}</h1>
-          <p className="hero-copy">
-            Live PRVX valuation using on-chain total supply, dead-wallet exclusions, and a static OA deduction.
-          </p>
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(6,182,212,0.16),transparent_28%),linear-gradient(135deg,#020617_0%,#09090b_45%,#082f49_100%)] text-white">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mb-8 flex flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left">
+          <img
+            src="https://provex.com/static/logo/logo-160.webp"
+            alt="ProveX logo"
+            className="h-16 w-16 rounded-2xl border border-cyan-400/20 bg-white/5 p-2 shadow-[0_0_25px_rgba(34,211,238,0.15)]"
+          />
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              ProveX Market Cap
+            </h1>
+            <p className="mt-1 text-sm text-zinc-300 sm:text-base">
+              Adjusted PRVX analytics with dead wallets and OA holdings removed
+            </p>
+          </div>
         </div>
-        <div className="hero-badges">
-          <span className="badge">Token: PRVX</span>
-          <span className="badge">Refresh target: {CONFIG.refreshSeconds}s</span>
+
+        <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-zinc-800/80 bg-black/30 p-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-zinc-300">
+            <span className="font-medium text-white">Token:</span>{" "}
+            {data?.name || "ProveX"} ({data?.symbol || "PRVX"})
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm text-zinc-400">
+              Last updated:{" "}
+              <span className="font-medium text-zinc-200">
+                {data ? formatUpdatedAt(data.updatedAt) : "-"}
+              </span>
+            </div>
+
+            <button
+              onClick={() => loadData(true)}
+              className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-medium text-cyan-200 transition hover:bg-cyan-400/20"
+              disabled={refreshing}
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
         </div>
-      </section>
 
-      {state.loading && !data ? (
-        <section className="card">
-          <h2>Loading live data...</h2>
-          <p className="hero-copy">Pulling total supply from PulseChain and price from DexScreener.</p>
-        </section>
-      ) : null}
+        {loading ? (
+          <div className="rounded-2xl border border-zinc-800 bg-black/30 p-8 text-center text-zinc-300 backdrop-blur">
+            Loading PRVX stats...
+          </div>
+        ) : error ? (
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-8 text-center text-red-200">
+            {error}
+          </div>
+        ) : data ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                label="ProveX Market Cap"
+                value={formatCompactUsd(data.adjustedMarketCap)}
+                subvalue={`${formatFullTokenAmount(data.adjustedCirculatingSupply)} PRVX adjusted supply`}
+              />
 
-      {state.error ? (
-        <section className="card">
-          <h2>Data error</h2>
-          <p className="hero-copy">{state.error}</p>
-        </section>
-      ) : null}
+              <StatCard
+                label="Adjusted Circulating Supply"
+                value={`${formatCompactTokenAmount(data.adjustedCirculatingSupply)} PRVX`}
+                subvalue={formatFullTokenAmount(data.adjustedCirculatingSupply)}
+              />
 
-      {data ? (
-        <>
-          <section className="metrics-grid">
-            <MetricCard
-              label="Adjusted Market Cap"
-              value={formatUsd(data.adjustedMarketCapUsd)}
-              subtext="Price × adjusted circulating supply"
-            />
-            <MetricCard
-              label="Adjusted Circulating Supply"
-              value={`${formatNumber(data.adjustedCirculatingSupply, 3)} ${data.tokenSymbol}`}
-              subtext="Total supply minus dead wallets minus OA"
-            />
-            <MetricCard
-              label="FDV"
-              value={formatUsd(data.fdvUsd)}
-              subtext="Price × total supply"
-            />
-            <MetricCard
-              label="Price"
-              value={formatUsd(data.priceUsd)}
-              subtext={`Best pair by liquidity: ${data.selectedPair?.dexId ?? "n/a"}`}
-            />
-          </section>
+              <StatCard
+                label="FDV"
+                value={formatCompactUsd(data.fdv)}
+                subvalue={`${formatFullTokenAmount(data.totalSupply)} PRVX total supply`}
+              />
 
-          <section className="details-grid">
-            <div className="card">
-              <h2>Supply Breakdown</h2>
-              <div className="table-wrap">
-                <table>
-                  <tbody>
-                    <tr>
-                      <td>Total supply (on-chain)</td>
-                      <td>{formatNumber(data.totalSupply.formatted, 3)} {data.tokenSymbol}</td>
-                    </tr>
-                    <tr>
-                      <td>Dead / excluded wallets</td>
-                      <td>-{formatNumber(data.excludedWalletTotal.formatted, 3)} {data.tokenSymbol}</td>
-                    </tr>
-                    <tr>
-                      <td>OA static exclusion</td>
-                      <td>-{formatNumber(data.oaExcludedSupply, 3)} {data.tokenSymbol}</td>
-                    </tr>
-                    <tr className="table-total">
-                      <td>Adjusted circulating supply</td>
-                      <td>{formatNumber(data.adjustedCirculatingSupply, 3)} {data.tokenSymbol}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <StatCard
+                label="PRVX Price"
+                value={formatUsdPrice(data.priceUsd)}
+                subvalue="Live market price"
+              />
             </div>
 
-            <div className="card">
-              <h2>Price Source</h2>
-              <div className="stack">
-                <div><strong>Pair:</strong> {data.selectedPair?.pairAddress || "n/a"}</div>
-                <div><strong>DEX:</strong> {data.selectedPair?.dexId || "n/a"}</div>
-                <div><strong>Quote:</strong> {data.selectedPair?.quoteSymbol || "n/a"}</div>
-                <div><strong>Liquidity:</strong> {formatUsd(data.selectedPair?.liquidityUsd || 0)}</div>
-                {data.selectedPair?.url ? (
-                  <a className="link-button" href={data.selectedPair.url} target="_blank" rel="noreferrer">
-                    Open DexScreener Pair
-                  </a>
-                ) : null}
-              </div>
-            </div>
-          </section>
+            <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5 backdrop-blur lg:col-span-2">
+                <div className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
+                  Supply Adjustments
+                </div>
 
-          <section className="details-grid">
-            <div className="card">
-              <h2>Excluded Wallets</h2>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Address</th>
-                      <th>Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.excludedWallets.map((wallet) => (
-                      <tr key={wallet.address}>
-                        <td className="mono">{wallet.address}</td>
-                        <td>{formatNumber(wallet.formattedBalance, 3)} {data.tokenSymbol}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                      Total Supply
+                    </div>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {formatFullTokenAmount(data.totalSupply)} PRVX
+                    </div>
+                  </div>
 
-            <div className="card">
-              <h2>Hardcoded Settings</h2>
-              <ul className="assumptions">
-                {data.assumptions.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-              <div className="meta-block">
-                <div><strong>Token address:</strong> <span className="mono">{data.tokenAddress}</span></div>
-                <div><strong>RPC:</strong> <span className="mono">{CONFIG.rpcUrl}</span></div>
-                <div><strong>Updated:</strong> {updatedLabel}</div>
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                      Dead / Excluded Wallets Total
+                    </div>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {formatFullTokenAmount(data.excludedWalletsTotal)} PRVX
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                      OA Excluded Supply
+                    </div>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {formatFullTokenAmount(data.oaExcludedSupply)} PRVX
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                      Adjusted Circulating Supply
+                    </div>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {formatFullTokenAmount(data.adjustedCirculatingSupply)} PRVX
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800 bg-black/30 p-5 backdrop-blur">
+                <div className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-cyan-300/80">
+                  Excluded Wallets
+                </div>
+
+                <div className="space-y-3">
+                  {data.excludedWallets.map((wallet) => (
+                    <div
+                      key={wallet}
+                      className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300"
+                    >
+                      <div className="truncate font-mono">{wallet}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-sm text-cyan-100">
+                  Static OA exclusion:{" "}
+                  <span className="font-semibold">
+                    {formatFullTokenAmount(data.oaExcludedSupply)} PRVX
+                  </span>
+                </div>
               </div>
             </div>
-          </section>
-        </>
-      ) : null}
+          </>
+        ) : null}
+      </div>
     </main>
   );
 }
