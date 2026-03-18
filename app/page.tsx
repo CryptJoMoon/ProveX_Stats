@@ -2,6 +2,34 @@
 
 import { useEffect, useState } from "react";
 
+const LEAGUES = [
+  { name: "Poseidon", percent: 10 },
+  { name: "Whale", percent: 1 },
+  { name: "Shark", percent: 0.1 },
+  { name: "Dolphin", percent: 0.01 },
+  { name: "Squid", percent: 0.001 },
+  { name: "Turtle", percent: 0.0001 },
+  { name: "Crab", percent: 0.00001 },
+  { name: "Shrimp", percent: 0.000001 },
+];
+
+function formatPercentLabel(percent: number) {
+  return `${percent}%`;
+}
+
+function buildLeagues(adjustedCirculatingSupply: number, priceUsd: number) {
+  return LEAGUES.map((league) => {
+    const tokensRequired = adjustedCirculatingSupply * (league.percent / 100);
+    const usdValue = tokensRequired * priceUsd;
+
+    return {
+      ...league,
+      tokensRequired,
+      usdValue,
+    };
+  });
+}
+
 type WalletStat = {
   address: string;
   balance: number;
@@ -130,7 +158,7 @@ export default function Page() {
       setData(json);
     } catch (err) {
       console.error(err);
-      setError("Failed to load PRVX stats.");
+      setError(err instanceof Error ? err.message : "Failed to load PRVX stats.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -142,6 +170,10 @@ export default function Page() {
     const interval = setInterval(() => loadData(true), 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const leagues = data
+    ? buildLeagues(data.adjustedCirculatingSupply, data.priceUsd)
+    : [];
 
   return (
     <main className="pageShell">
@@ -270,6 +302,38 @@ export default function Page() {
                   </span>
                 </div>
               </div>
+
+                          <div className="panel leaguesPanel">
+              <div className="panelTitle">Token Leagues</div>
+              <div className="leagueSubtitle">
+                Thresholds based on adjusted circulating supply, not total supply
+              </div>
+
+              <div className="leagueHeader">
+                <div>League</div>
+                <div>%</div>
+                <div>Tokens Required</div>
+                <div>USD Value</div>
+              </div>
+
+              <div className="leagueRows">
+                {leagues.map((league) => (
+                  <div key={league.name} className="leagueRow">
+                    <div className="leagueName">{league.name}</div>
+                    <div className="leaguePercent">
+                      {formatPercentLabel(league.percent)}
+                    </div>
+                    <div className="leagueTokens">
+                      {formatFullTokenAmount(league.tokensRequired)}
+                    </div>
+                    <div className="leagueUsd">
+                      {formatCompactUsd(league.usdValue)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+              
             </div>
           </>
         ) : null}
