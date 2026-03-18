@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 
 const LEAGUES = [
-  { name: "Poseidon", percent: 10 },
-  { name: "Whale", percent: 1 },
-  { name: "Shark", percent: 0.1 },
-  { name: "Dolphin", percent: 0.01 },
-  { name: "Squid", percent: 0.001 },
-  { name: "Turtle", percent: 0.0001 },
-  { name: "Crab", percent: 0.00001 },
-  { name: "Shrimp", percent: 0.000001 },
+  { name: "Poseidon", percent: 10, icon: "🌊" },
+  { name: "Whale", percent: 1, icon: "🐋" },
+  { name: "Shark", percent: 0.1, icon: "🦈" },
+  { name: "Dolphin", percent: 0.01, icon: "🐬" },
+  { name: "Squid", percent: 0.001, icon: "🐙" },
+  { name: "Turtle", percent: 0.0001, icon: "🐢" },
+  { name: "Crab", percent: 0.00001, icon: "🦀" },
+  { name: "Shrimp", percent: 0.000001, icon: "🦐" },
 ];
 
 function formatPercentLabel(percent: number) {
@@ -319,7 +319,10 @@ export default function Page() {
               <div className="leagueRows">
                 {leagues.map((league) => (
                   <div key={league.name} className="leagueRow">
-                    <div className="leagueName">{league.name}</div>
+                    <div className="leagueName">
+                      <span className="leagueIcon">{league.icon}</span>
+                      {league.name}
+                    </div>
                     <div className="leaguePercent">
                       {formatPercentLabel(league.percent)}
                     </div>
